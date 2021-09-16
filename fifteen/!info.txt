@@ -1,0 +1,7 @@
+Program control:
+
+L ... right
+I ... up
+J ... left
+K ... down
+Q ... new game

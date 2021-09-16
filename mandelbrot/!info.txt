@@ -1,0 +1,16 @@
+Program control:
+
+E ....... move up
+S ....... move left
+D ....... move right
+X ....... move down
+Q ....... zoom in
+A ....... zoom out
+I ....... use integer arithmetics
+F ....... use float arithmetics
+B ....... use double arithmetics
+O ....... decrease number of steps
+P ....... increase number of steps
+space ... redraw
+
+Blinking LED indicates render completed.

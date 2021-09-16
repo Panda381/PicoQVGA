@@ -1,0 +1,12 @@
+Program control:
+
+J ....... left
+L ....... right
+I ....... up
+K ....... down
+H ....... help turn
+Q ....... quit, restart game
+P ....... 2 players
+D ....... demo
+space ... play eggs, put stone
+Enter ... play hens, put stone

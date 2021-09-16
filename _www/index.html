@@ -1,0 +1,1707 @@
+<html>
+
+<head>
+<meta http-equiv="Content-Type"
+content="text/html; charset=windows-1250">
+<meta name="GENERATOR" content="Microsoft FrontPage Express 2.0">
+<title>PicoQVGA - minimalistickı displej QVGA na Raspberry Pico</title>
+</head>
+
+<body bgcolor="#FFFFFF" text="#000000">
+<div align="center"><center>
+
+<table border="0" width="100%">
+    <tr>
+        <td width="33%"><p align="left"><a href="../index.html"><font
+        face="Arial">&lt;&lt; Zpìt</font></a></p>
+        </td>
+        <td width="33%">&nbsp;</td>
+        <td width="34%"><p align="right"><font face="Arial">  <u>Èesky:</u>
+        <img src="img/cz2.gif" width="50" height="30">, </font><a
+        href="index_en.html"><font face="Arial">English: <img
+        src="img/en.gif" border="0" width="50" height="30"></font></a></p>
+        </td>
+    </tr>
+</table>
+</center></div>
+
+<p align="center"><font color="#FF8000" size="5" face="Arial"><strong>PicoQVGA</strong>
+<strong>- minimalistickı displej QVGA na Raspberry Pico</strong></font></p>
+
+<p align="center"><font face="Arial">verze 1.0, záøí 2021</font></p>
+
+<p align="center"><font face="Arial">(c) Miroslav Nìmeèek</font></p>
+
+<p align="center"><img src="img/picoqvga1.jpg" width="400"
+height="384"></p>
+
+<p align="center"><a href="dwn/PicoQVga.zip"><font face="Arial">Download
+knihovny PicoQVGA</font></a></p>
+
+<p align="center">&nbsp;</p>
+
+<p><font face="Arial"><strong>Obsah</strong></font></p>
+
+<ul>
+    <li><a href="#hardware"><font face="Arial">Schéma zapojení</font></a></li>
+    <li><a href="#timings"><font face="Arial">Èasování</font></a></li>
+    <li><a href="#pioprogram"><font face="Arial">PIO program</font></a></li>
+    <li><a href="#pioinit"><font face="Arial">Inicializace PIO</font></a></li>
+    <li><a href="#bufinit"><font face="Arial">Inicializace
+        bufferù</font></a></li>
+    <li><a href="#dmainit"><font face="Arial">Inicializace DMA</font></a></li>
+    <li><a href="#interrupt"><font face="Arial">Obsluha
+        pøerušení</font></a></li>
+    <li><a href="#vgainit"><font face="Arial">Inicializace QVGA
+        knihovny</font></a></li>
+    <li><a href="#multicore"><font face="Arial">Multicore</font></a></li>
+    <li><a href="#support"><font face="Arial">Podpùrné funkce</font></a></li>
+    <li><a href="#demo"><font face="Arial">Ukázkové programy</font></a></li>
+</ul>
+
+<p><font face="Arial">PicoQVGA je minimalistická knihovna
+generující VGA signál pro VGA monitor na Raspberry Pico v
+rozlišení 320x240 / 8 bitù. Na kódu knihovny je formou
+tutoriálu podrobnì vysvìtlena funkce a pouití øadièù PIO
+a DMA. I pøes jednoduchost knihovny (jádro zabere asi 400
+øádkù v C) je knihovna postaèující pro rozsáhlou oblast
+vyuití. PicoQVGA je zjednodušenou verzí plné verze
+knihovny </font><a
+href="http://www.breatharian.eu/hw/picovga/index.html"><font
+face="Arial">PicoVGA</font></a><font face="Arial">.</font></p>
+
+<h2><a name="hardware"></a><font face="Arial">Schéma zapojení</font></h2>
+
+<p><font face="Arial">Vıstup barevného signálu zajišuje 8
+rezistorù, R1 a R8. Barevné sloky jsou: 2 bity pro modrou
+(B0 a B1), 3 bity pro zelenou (G0 a G2) a 3 bity pro
+èervenou (R0 a R2). 8-bitovı vıstup zajistí malé nároky
+na RAM pamì, které není v Raspberry Pico nazbyt (obrazovı
+buffer 320x240/8 zabere 76 KB z dostupnıch 256 KB).</font></p>
+
+<p><font face="Arial">Knihovna generuje oddìlené
+synchronizaèní signály HSYNC a VSYNC. S malou úpravou lze
+generovat jen jeden spoleènı synchronizaèní signál CSYNC
+(není souèástí kódu), kterı ušetøí 1 pin Pico, avšak
+nìkteré starší VGA monitory tento mód nepodporují (není
+jich moc).</font></p>
+
+<p><font face="Arial">Ve schématu je doplòkovì uvedeno i
+zapojení audio PWM vıstupu, kterı je vyuíván v nìkterıch
+ukázkovıch programech, ale není nutné ho pouít.</font></p>
+
+<p><font face="Arial">V ukázkovıch programech je k ovládání
+pouita konzolová klávesnice hostitelského poèítaèe, s
+vyuitím programovacího USB konektoru a konzolového programu
+(</font><a href="dwn/begPutty.zip"><font face="Arial">begPutty</font></a><font
+face="Arial">).</font></p>
+
+<p><font face="Arial">Budete-li chtít zapojení modifikovat, je
+moné signály barev B0 a R2 pøesunout na jiné piny. Vdy
+ale musí platit, e signály musí zachovat stejnou spojitou
+øadu. To je z dùvodu, e PIO umoòuje mìnit poèátek pole
+pinù, ale neumoòuje mìnit poøadí pinù. Podobnì signály
+HSYNC a VSYNC mohou bıt na jinıch pinech, nezávisle na
+signálech barev, opìt ale platí, e je nutné zachovat jejich
+posloupnost - tj. pin VSYNC musí bezprostøednì následovat za
+pinem HSYNC.</font></p>
+
+<p><font face="Arial"><img src="img/PicoQVGA_diagram.jpg"
+width="1000" height="402"></font></p>
+
+<p>&nbsp;</p>
+
+<h2><a name="timings"></a><font face="Arial">Èasování</font></h2>
+
+<p><font face="Arial">Jako první krok si potøebujeme
+rozplánovat èasování vıstupního signálu. Vyjdeme z
+èasování VGA signálu, ale pouijeme polovièní rozlišení
+(QVGA). Obrazové videolinky budou zdvojené. Z normy VGA známe
+tyto údaje:</font></p>
+
+<p><font face="Arial">VGA rozlišení:</font></p>
+
+<ul>
+    <li><font face="Arial">rozlišení obrazu: 640x480 pixelù
+        (QVGA 320x240 pixelù)</font></li>
+    <li><font face="Arial">vertikální frekvence: 60 Hz</font></li>
+    <li><font face="Arial">horizontální frekvence: 31.4685 kHz</font></li>
+    <li><font face="Arial">pixel clock: 25.175 MHz (QVGA 12.5875
+        MHz)</font></li>
+</ul>
+
+<p><font face="Arial">VGA vertikální èasování:</font></p>
+
+<ul>
+    <li><font face="Arial">poèet videolinek celkem: 525</font></li>
+    <li><font face="Arial">vertikální synchronizace VSYNC: 2
+        videolinky</font></li>
+    <li><font face="Arial">vertikální back porch (linky za
+        VSYNC): 33 videolinek</font></li>
+    <li><font face="Arial">aktivní obrazové videolinky: 480
+        (QVGA 240, zdvojené videolinky)</font></li>
+    <li><font face="Arial">vertikální front porch (linky pøed
+        VSYNC): 10</font></li>
+</ul>
+
+<p><font face="Arial">VGA horizontální èasování:</font></p>
+
+<ul>
+    <li><font face="Arial">délka videolinky celkem: 31.77781 us</font></li>
+    <li><font face="Arial">horizontální synchronizace HSYNC:
+        3.81334 us</font></li>
+    <li><font face="Arial">horizontální back porch (za HSYNC):
+        1.90667 us</font></li>
+    <li><font face="Arial">aktivní obraz: 25.42224 us</font></li>
+    <li><font face="Arial">horizontální front porch (pøed
+        HSYNC): 0.63556 us</font></li>
+    <li><font face="Arial">èas na 1 pixel: 0.03972225 us (QVGA
+        0.0794445 us)</font></li>
+</ul>
+
+<p><font face="Arial">Implicitní systémové hodiny Raspberry
+Pico jsou 125 MHz. Vydìlíme-li hodiny èíslem 10, dostaneme
+12.5 MHz jako nejbliší èíslo k poadovanım hodinám
+pixelù (12.5875 MHz). Tuto frekvenci bychom sice mohli pouít
+(a je i souèástí zdrojového kódu jako alternativa), ale
+mohlo by to znamenat, e 2 pixely po stranách obrazu se mohou
+u dostat mimo viditelnou oblast monitoru. Zvolíme proto
+radìji další nejbliší vyšší frekvenci systémovıch
+hodin, 126 MHz. Pixel clock pro QVGA v tom pøípadì bude 12.6
+MHz (0.079365 us na pixel) a obraz bude celı viditelnı.</font></p>
+
+<p><font face="Arial">Jak mùeme zjistit pomocí pøiloeného
+programu PicoClock, systémové hodiny 126 MHz dostaneme
+nastavením PLL na hodnoty: vco=1008 MHz, fbdiv=84, pd1=4, pd2=2.</font></p>
+
+<p><font face="Arial">Pro optimální práci s PIO budeme PIO
+taktovat systémovımi hodinami dìlenımi èíslem 2. Na 1 pixel
+budeme potøebovat 5 taktù PIO hodin. Z uvedenıch údajù
+vypoèteme potøebné èasování PIO:</font></p>
+
+<ul>
+    <li><font face="Arial">frekvence hodinovıch taktù PIO: 63
+        MHz</font></li>
+    <li><font face="Arial">celková délka videolinky
+        (63*31.77781): 2002 taktù</font></li>
+    <li><font face="Arial">aktivní obraz (320*5): 1600 taktù</font></li>
+    <li><font face="Arial">horizontální synchronizace
+        (63*3.81334): 240 taktù</font></li>
+    <li><font face="Arial">horizontální front porch
+        (63*0.63556+1): 41 taktù</font></li>
+    <li><font face="Arial">horizontální back porch
+        (63*1.90667+1): 121 taktù</font></li>
+</ul>
+
+<p><font face="Arial">K front a back porch jsme pøièetli 1 takt
+(symetricky, aby obraz zùstal vystøedìnı), protoe aktivní
+obraz je o 2 takty kratší ne pøedepsané èasování.</font></p>
+
+<h2><a name="pioprogram"></a><font face="Arial">PIO program</font></h2>
+
+<p><font face="Arial">O PIO modulu se dá øíct, e je to jedna
+z hlavních vlastností, která vyzvedává Raspberry Pico o
+nìkolik úrovní vıše. PIO je jakoby další procesor v
+procesoru. PIO modul je zamìøenı pøedevším na
+programování komunikaèního rozhraní, proto od nìj
+neèekejte napø. provádìní vıpoètù. Vyuije se tam, kde
+je potøeba pøesné èasování.</font></p>
+
+<p><font face="Arial">Raspberry Pico má dva nezávislé PIO
+moduly. Kadı PIO modul má v sobì pamì programu o
+velikosti 32 instrukcí a 4 statové automaty SM (state machine).
+Stavové automaty jednoho PIO modulu sdílejí spolu programovou
+pamì, ale jinak je jejich funkce nezávislá.</font></p>
+
+<p><font face="Arial">Zaèneme PIO programem. PIO program jsou
+instrukce pro PIO modul. Délka programu je omezena na 32
+instrukcí. Do programové pamìti PIO mùeme zavést
+samostatné programy pro kadı z SM modulù, nebo programy
+mùeme sdílet, omezeni jsme pouze velikostí pamìti 32
+instrukcí. PIO program se pøekládá pøekladaèem
+&quot;pioasm&quot;, kterı je souèástí Raspberry Pico SDK. V
+pùvodním SDK naleznete verzi pøekladaèe pro Linux, zde v
+pøiloeném balíku je verze pro Windows.</font></p>
+
+<p><font face="Arial">Soubor instrukcí PIO procesoru není
+rozsáhlı, je to jen 9 instrukcí (kadá instrukce je dlouhá
+16 bitù), ale jak zjistíte, pro komunikaèní programy
+postaèují. Jedná se o tyto instrukce:</font></p>
+
+<ul>
+    <li><font face="Arial">JMP ... skok v programu (podmínìnı
+        nebo nepodmínìnı)</font></li>
+    <li><font face="Arial">WAIT ... èekání na událost
+        (pøíchod IRQ nebo stav pinu)</font></li>
+    <li><font face="Arial">IN ... naètení bitù do vstupního
+        posuvného registru ISR</font></li>
+    <li><font face="Arial">OUT ... vıstup bitù z vıstupního
+        posuvného registru OSR</font></li>
+    <li><font face="Arial">PUSH ... pøenos vstupního posuvného
+        registru ISR do pøijímací RX FIFO</font></li>
+    <li><font face="Arial">PULL ... naètení vıstupního
+        posuvného registru OSR z vysílací TX FIFO</font></li>
+    <li><font face="Arial">MOV ... kopie dat mezi registry</font></li>
+    <li><font face="Arial">IRQ ... nastavení nebo nulování
+        poadavku pøerušení IRQ</font></li>
+    <li><font face="Arial">SET ... nastavení konstanty do
+        registru</font></li>
+    <li><font face="Arial">NOP ... prázdná instrukce, je to
+        synonymum instrukce MOV y,y</font></li>
+</ul>
+
+<p><font face="Arial">PIO procesor má k dispozici následující
+registry:</font></p>
+
+<ul>
+    <li><font face="Arial">x, y ... volnì pouitelné
+        32-bitové registry</font></li>
+    <li><font face="Arial">OSR ... vıstupní posuvnı 32-bitovı
+        registr</font></li>
+    <li><font face="Arial">ISR ... vstupní posuvnı 32-bitovı
+        registr</font></li>
+    <li><font face="Arial">PINS ... vstupní a vıstupní piny
+        (mapované na GPIO)</font></li>
+    <li><font face="Arial">PINDIRS ... smìr pinù vstup/vıstup</font></li>
+    <li><font face="Arial">NULL ... nulová hodnota (nebo pøi
+        zápisu zrušení dat)</font></li>
+    <li><font face="Arial">PC ... programovı 5-bitovı èítaè</font></li>
+    <li><font face="Arial">EXEC ... provedení 16-bitové
+        instrukce</font></li>
+</ul>
+
+<p><font face="Arial">Vysvìtlení k posuvnım registrùm. Pøi
+vysílání dat pøes PIO zapíše hlavní procesor vysílané
+32-bitové slovo do vysílací fronty TX FIFO. Vysílací fronta
+je dlouhá 4 pozice. Není-li potøebnı pøíjem, mùe se
+slouèit s pøijímací frontou na délku 8 pozic. Z vysílací
+fronty si PIO program pøeète vysílané slovo instrukcí PULL a
+uloí ho do vıstupního posuvného registru OSR. Z OSR
+registru si program postupnì naèítá data po bitech pomocí
+instrukce OUT. Pøípadnì je instrukcí OUT mùe zapsat
+pøímo na vıstupní piny.</font></p>
+
+<p><font face="Arial">Pøi pøíjmu dat pøijímá PIO procesor
+postupnì stav pinù po bitech instrukcí IN do registru ISR.
+Instrukcí PUSH pøenese ISR registr do pøijímací fronty RX
+FIFO, odkud si naètenou 32-bitovou hodnotu pøeète hlavní
+procesor.</font></p>
+
+<p><font face="Arial">Pro všechny PIO instrukce platí, e
+kadá instrukce trvá implicitnì pøesnì 1 takt PIO hodin,
+nezávisle na ostatní èinnosti hlavního procesoru. To
+umoòuje psát programy s pøesnım èasováním. Instrukce
+mohou trvat delší èas v pøípadì zádrhelu ve FIFO frontì,
+nestíhá-li hlavní procesor data vèas zpracovávat.</font></p>
+
+<p><font face="Arial">Kadá PIO instrukce obsahuje 5-bitové
+pole slouící ke 2 úèelùm:</font></p>
+
+<ol>
+    <li><font face="Arial">Pøídavná prodleva
+        &quot;delay&quot;. Kromì základní doby provedení
+        instrukce 1 takt mùe kadá instrukce èekat ještì
+        dalších a 31 taktù hodin.</font></li>
+    <li><font face="Arial">Pøímı vıstup na piny
+        &quot;side-set&quot;. Kromì programového vıstupu na
+        vıstupní piny lze øídit a 5 vıstupních pinù
+        pøímo, jako souèást kódu instrukce.</font></li>
+</ol>
+
+<p><font face="Arial">Kolik bitù z 5-bitového pole bude
+vyuito pro prodlevu a kolik pro side-set, lze urèit
+konfigurací SM. V našem driveru budeme pouívat 2 side-set
+bity pro vıstup synchronizaèních signálù HSYNC a VSYNC.
+Zbıvající 3 bity pouijeme pro prodlevu, kadá instrukce
+tak mùe trvat 1 a 8 taktù.</font></p>
+
+<p><font face="Arial">Jeden z bitù 5-bitového pole mùe bıt
+vyuit jako pøíznak, zda se side-set pole pouívá nebo ne.
+Neznamená to ovšem, e by všechny zbylé bity byly
+pouitelné pro prodlevu. Znamená to jen, zda u instrukcí
+musíme zadávat side-set nebo ne. Zvolíme radìji pevné
+rozdìlení pole a side-set budeme zadávat u kadé instrukce.</font></p>
+
+<p><font face="Arial">Pøejdìme k PIO programu. Na zaèátku
+programu uvedeme následující definice:</font></p>
+
+<pre><font size="4"><strong>
+.program qvga
+.side_set	2	; HSYNC and VSYNC output (2 bits)
+.define NOSYNC	0	; no sync, output image or blanking
+.define HSYNC	1	; HSYNC pulse (or CSYNC pulse)
+.define VSYNC	2	; VSYNC pulse
+.define VHSYNC	3	; HSYNC and VSYNC pulse
+.define BPP	8	; number of bits per pixel
+
+</strong></font></pre>
+
+<p><font face="Arial">První øádek oznaèuje jméno programu.
+Jednak pomocí tohoto jména se budeme odkazovat na vygenerovaná
+návìští a jednak to slouí k oddìlení programù,
+obsahuje-li jeden soubor více programù.</font></p>
+
+<p><font face="Arial">Druhı øádek definuje nastavení
+side-set. Èíslo 2 udává, e v kadé instrukci budou
+vyuity 2 bity 5-bitového pole jako vıstup hodnoty na
+vıstupní piny. Zbylé 3 bity budou vyuity pro pøídavnou
+prodlevu.</font></p>
+
+<p><font face="Arial">Hodnota BPP udává poèet bitù na pixel.
+Kód programu mùeme pouívat pro barevnou hloubku 1, 2, 4,
+8, 16 a 32 bitù. Je nutné poèítat s tím, e délka
+zapsanıch obrazovıch dat musí bıt zarovnaná na 32-bitové
+slovo. My pouijeme 8-bitové pixely. Obrazová data tedy musí
+bıt zarovnaná na 4 pixely.</font></p>
+
+<p><font face="Arial">Ostatní øádky jsou definice hodnoty
+signálù pro side-set. Signály HSYNC a VSYNC musí bıt na
+pinech bezprostøednì po sobì následujících. Signál VGA
+vyaduje negativní tvar synchronizaèních pulzù - tj. v klidu
+jsou signály v úrovni HIGH, pouze bìhem pulzu úroveò klesne
+na LOW. Tento stav mùeme pøipravit i naší definicí, ale
+pro pøehlednost pouijeme v programu radìji pozitivní
+polarizaci a v konfiguraci vıstupních pinù zvolíme negací
+vıstupního signálu.</font></p>
+
+<p><font face="Arial">Program se bude skládat z krátkıch
+úsekù, kde kadı úsek bude generovat jeden typ signálu.
+Zaèneme úsekem, kterı bude generovat signál HSYNC.</font></p>
+
+<pre><font size="4"><strong>
+; ===== [3 instructions] HSYNC pulse, N=delay in clock cycles - 3
+; starts HSYNC at time 0
+
+public hsync:
+	jmp	x--,hsync	side HSYNC	; [N+1] loop
+public entry:					; program entry point
+	out	x,27		side HSYNC	; [1] get next loop counter N
+	out	pc,5		side HSYNC	; [1] jump to next function
+
+</strong></font></pre>
+
+<p><font face="Arial">Øádek &quot;public hsync&quot; je
+veøejné návìští. Znamená to, e pøekladaè vygeneruje C
+kód s hodnotami návìští, aby je mohl hlavní program
+pouívat.</font></p>
+
+<p><font face="Arial">První instrukce, &quot;jmp
+x--,hsync&quot;, je programová smyèka s podmínìnım skokem.
+Instrukce se podívá do registru X a je-li jeho hodnota
+nenulová, dekrementuje hodnotu X a provede skok na zadané
+návìští. V pøípadì nulové hodnoty pokraèuje dál a
+hodnotu X nezmìní. Obsahuje-li registr X na zaèátku hodnotu
+N, provede se celá smyèka za N+1 taktù. Následující 2
+øádky zaberou 2 hodinové takty. Chceme-li tedy dosáhnout
+urèité doby provádìní celého úseku, musíme na zaèátku
+nastavit hodnotu X o 3 niší ne je poadovaná doba.</font></p>
+
+<p><font face="Arial">Øádek &quot;public entry:&quot; je
+vstupní bod do programu. Sem nasmìrujeme program po startu.
+Zajistí se tím naètení prvního øídicího slova.</font></p>
+
+<p><font face="Arial">Další 2 øádky naètou øídicí slovo z
+OSR registru a provedou skok na další programovı segment.
+Nemusíme pouívat instrukci PULL, protoe v konfiguraci bude
+nastavené automatické naèítání registru OSR z vysílací
+fronty TX FIFO. První instrukce, &quot;out x,27&quot;, naète 27
+bitù z registru OSR do registru X. Tuto hodnotu pouijeme jako
+èítaè pro následující programovı segment. Druhá
+instrukce, &quot;out pc,5&quot;, naète 5 bitù do registru PC.
+PC je 5-bitovı èítaè programu, nastavením jeho hodnoty se
+provede skok na jinou adresu v programu.</font></p>
+
+<p><font face="Arial">Vıstupní registr OSR se bìhem instrukce
+OUT bude posouvat smìrem doprava (k niším bitùm). To je
+dáno formátem obrazovıch dat - pixel na niší adrese je
+potøeba vysílat døív ne na vyšší adrese. Ve skuteènosti
+se data z OSR do X nepøenášejí po bitech, ale jako celistvı
+bitovı úsek, smìr posunu OSR tedy poøadí pøenesenıch bitù
+neovlivní.</font></p>
+
+<p><font face="Arial">Pøídavnı parametr &quot;side HSYNC&quot;
+zajistí, e bìhem provádìní tohoto programového úseku
+bude nastaven signál HSYNC jako aktivní (side-set vıstupní
+piny se nastaví na hodnotu &quot;1&quot;).</font></p>
+
+<p><font face="Arial">Podobnım zpùsobem vytvoøíme i
+programové segmenty aktivující signál VSYNC a signál
+HSYNC+VSYNC.</font></p>
+
+<pre><font size="4"><strong>
+; ===== [3 instructions] VSYNC pulse, N=delay in clock cycles - 3
+; starts VSYNC at time 0
+
+public vsync:
+	jmp	x--,vsync	side VSYNC	; [N+1] loop
+	out	x,27		side VSYNC	; [1] get next loop counter N
+	out	pc,5		side VSYNC	; [1] jump to next function
+
+; ===== [3 instructions] VSYNC and HSYNC pulse, N=delay in clock cycles - 3
+; starts HSYNC and VSYNC at time 0
+
+public vhsync:
+	jmp	x--,vhsync	side VHSYNC	; [N+1] loop
+	out	x,27		side VHSYNC	; [1] get next loop counter N
+	out	pc,5		side VHSYNC	; [1] jump to next function
+
+</strong></font></pre>
+
+<p><font face="Arial">Blíe se pozastavíme u úseku
+generujícího tmu.</font></p>
+
+<pre><font size="4"><strong>
+; ===== [4 instructions] DARK pulse, N=delay in clock cycles - 4
+; sets blanking at time 0, starts NOSYNC at time 0
+
+public dark:
+	mov	pins,null	side NOSYNC	; [1] dark output
+dark_loop:
+	jmp	x--,dark_loop	side NOSYNC	; [N+1] loop
+.wrap_target					; wrap jump target
+	out	x,27		side NOSYNC	; [1] get next loop counter N
+	out	pc,5		side NOSYNC	; [1] jump to next function
+
+</strong></font></pre>
+
+<p><font face="Arial">Oproti pøedešlım úsekùm pøibyl
+øádek &quot;mov pins,null&quot;. Øádek zajistí nastavení
+vıstupních pinù barev na hodnotu 0, protoe registr <strong>null</strong>
+pøedstavuje hodnotu nula. Kdybychom potøebovali opaènou
+hodnotu, pouili bychom monost provedení inverze hodnoty
+bìhem provádìní instrukce.</font></p>
+
+<p><font face="Arial">Nakonec zbıvá úsek, kterım odešleme
+obrazová data na vıstup barev.</font></p>
+
+<pre><font size="4"><strong>
+; ===== [3 instructions] output pixels at 5 clocks per pixel, N=number of pixels-2
+; number of pixels must be multiple of: 1 at BP=32, 2 at BPP=16, 4 at BPP=8, 8 at BPP=4, 16 at BPP=2, 32 at BPP=1
+; Output first pixel at time 0
+
+public output:
+	out	pins,BPP	side NOSYNC [2]	; [3] output pixel
+	jmp	x--,output	side NOSYNC [1]	; [2] loop (N+1 pixels)
+	out	pins,BPP	side NOSYNC [2]	; [3] output pixel
+.wrap						; wrap jump to .wrap_target
+
+</strong></font></pre>
+
+<p><font face="Arial">První instrukce, &quot;out pins,BPP&quot;,
+naète z OSR registru 8 bitù (obsahujících data pro 1 pixel) a
+zapíše je na vıstupní piny barev. Druhá instrukce je
+èítaè prùchodù. Obsahuje-li registr X na zaèátku poèet N,
+odešle se touto smyèkou N+1 obrazovıch pixelù na vıstup.</font></p>
+
+<p><font face="Arial">Kromì side-set pole obsahují instrukce i
+delay prodlevu, uvedenou v hranatıch závorkách []. Je to èas
+v taktech, kterı se pøidá k základní dobì provedení
+instrukce, která je 1. První instrukce smyèky (out) bude trvat
+3 takty, druhá instrukce (jmp) bude trvat 2 takty. Celkem tedy
+jeden prùchod smyèkou zabere 5 taktù.</font></p>
+
+<p><font face="Arial">Kdybychom nyní tento úsek ukonèili
+instrukcemi pro naètení X a skok, které zaberou 2 takty, byl
+by poslední pixel dlouhı 7 taktù namísto 5. Proto vıstup na
+poslední pixel provedeme pomocí další instrukce
+&quot;out&quot;. Bude trvat 3 takty, následující instrukce
+skoku zaberou 2 takty a tím splníme poadavek délky
+posledního pixelu 5 taktù.</font></p>
+
+<p><font face="Arial">Na vstupu do segmentu musí registr X
+obsahovat poèet pixelù sníenı o 2.</font></p>
+
+<p><font face="Arial">Poslední segment není ukonèenı 2
+instrukcemi 'out' jako v pøedešlıch pøípadech, ale je
+ukonèen symbolem &quot;.wrap&quot;. Wrap je vlastnost
+pouívaná u smyèek. PIO procesor umoòuje jednu adresu
+programu oznaèit návìštím .wrap a pokud na tuto adresu
+narazí, provede okamitı skok na jinou adresu, oznaèenou
+návìštím &quot;.wrap_target&quot;. To slouí k vytváøení
+smyèek, kdy je na konci smyèky uveden &quot;.wrap&quot; a na
+zaèátku smyèky &quot;.wrap_target&quot;. Wrap má efekt
+nepodmínìného skoku, ovšem s tím rozdílem, e skok
+nezabere 1 takt hodin, ale provede se okamitì, bez prodlevy.
+Lze tak vyuít ke zrychlení smyèky a zkrácení programu. My
+ho zde nevyuijeme ve smyèce, ale ke zkrácení programu - wrap
+provede skok na instrukce skoku v pøedešlém segmentu a tím
+mùeme u posledního segmentu ušetøit 2 instrukce.</font></p>
+
+<p><font face="Arial">Program pøeloíme pøíkazem
+&quot;pioasm.exe -o c-sdk qvga.pio qvga.pio.h&quot;.
+Vygenerovanı soubor obsahuje definice v C kódu s pøeloenım
+programem, symbolická návìští a pomocné podprogramy.</font></p>
+
+<h2><a name="pioinit"></a><font face="Arial">Inicializace PIO</font></h2>
+
+<p><font face="Arial">Pøipravíme si funkci, která inicializuje
+PIO a SM. Pro pøehlednost budu uvádìt promìnné a definice
+bezprostøednì pøed jejich pouitím. Nejdøíve zavedeme PIO
+program do pamìti.</font></p>
+
+<pre><font size="4"><strong>
+#define QVGA_PIO	pio0	// QVGA PIO
+#define QVGA_SM		0	// QVGA state machine
+uint QVGAOff;			// offset of QVGA PIO program
+
+// load PIO program
+QVGAOff = pio_add_program(QVGA_PIO, &amp;qvga_program);
+
+</strong></font></pre>
+
+<p><font face="Arial">V definici jsme si urèili, e pro VGA
+vıstup pouijeme PIO0 a SM0. Ale mohli bychom nechat na SDK
+knihovnì, aby urèila volnı PIO a SM a namísto konstant
+pouívat promìnné.</font></p>
+
+<p><font face="Arial">Funkce <strong>pio_add_program</strong>
+pøevezme strukturu vygenerovanou pøekladaèem a instrukce
+programu v ní uvedené zapíše do programové pamìti PIO SM.
+Poznamenejme, e programová pamì PIO je dostupná ve formì
+32 portù po 16 bitech. Funkce vyhledá od konce programové
+pamìti volné místo, tam program uloí a navrátí offset
+zaèátku programu. Mohli bychom sice program zavést na pevnì
+danou adresu (pøi pøekladu pouít pøíkaz .origin), ale
+tímto volnìjším zpùsobem mùeme program snáze kombinovat
+s jinımi programy.</font></p>
+
+<p><font face="Arial">Nakonfigurujeme vıstupní piny.</font></p>
+
+<pre><font size="4"><strong>
+// QVGA port pins
+#define QVGA_GPIO_FIRST	2	// first QVGA GPIO
+#define QVGA_GPIO_NUM	8	// number of QVGA color GPIOs, without HSYNC and VSYNC
+#define QVGA_GPIO_LAST	(QVGA_GPIO_FIRST+QVGA_GPIO_NUM-1) // last QVGA GPIO
+#define QVGA_GPIO_HSYNC	10	// QVGA HSYNC/CSYNC GPIO
+#define QVGA_GPIO_VSYNC	(QVGA_GPIO_HSYNC+1) // QVGA VSYNC GPIO
+
+// configure GPIOs for use by PIO
+for (i = QVGA_GPIO_FIRST; i &lt;= QVGA_GPIO_LAST; i++) pio_gpio_init(QVGA_PIO, i);
+pio_gpio_init(QVGA_PIO, QVGA_GPIO_HSYNC);
+pio_gpio_init(QVGA_PIO, QVGA_GPIO_VSYNC);
+
+// set pin direction to output
+pio_sm_set_consecutive_pindirs(QVGA_PIO, QVGA_SM, QVGA_GPIO_FIRST, QVGA_GPIO_NUM, true);
+pio_sm_set_consecutive_pindirs(QVGA_PIO, QVGA_SM, QVGA_GPIO_HSYNC, 2, true);
+
+// negate HSYNC and VSYNC output
+gpio_set_outover(QVGA_GPIO_HSYNC, GPIO_OVERRIDE_INVERT);
+gpio_set_outover(QVGA_GPIO_VSYNC, GPIO_OVERRIDE_INVERT);
+
+</strong></font></pre>
+
+<p><font face="Arial">V definicích jsme zvolili, e barevnı
+port je 8 GPIO pinù, poèínaje GPIO2. HSYNC signá je na GPIO10
+a VSYNC na GPIO11.</font></p>
+
+<p><font face="Arial">Funkce <strong>pio_gpio_init</strong>
+nastaví vıstupní piny do reimu, kdy jsou ovládané pøímo
+z PIO. Pøíkazem <strong>pio_sm_set_consecutive_pindirs</strong>
+nastavíme piny jako vıstup. U pinù HSYNC a VSYNC nastavíme
+inverzi vıstupu - to proto, abychom mohli v PIO programu
+poívat pozitivní polarizaci. Ale není to nutné a v programu
+mùeme pracovat s negativní polarizací signálù.</font></p>
+
+<p><font face="Arial">Pøipravíme strukturu pro konfiguraci SM.</font></p>
+
+<pre><font size="4"><strong>
+// prepare default PIO program config
+pio_sm_config cfg = qvga_program_get_default_config(QVGAOff);
+
+// map state machine's OUT and MOV pins	
+sm_config_set_out_pins(&amp;cfg, QVGA_GPIO_FIRST, QVGA_GPIO_NUM);
+
+// set sideset pins (HSYNC and VSYNC)
+sm_config_set_sideset_pins(&amp;cfg, QVGA_GPIO_HSYNC);
+
+</strong></font></pre>
+
+<p><font face="Arial">Funkci <strong>qvga_program_get_default_config</strong>
+pøipravil pøekladaè PIO programu. Kromì pøípravy
+implicitní konfiguraèní struktury obsahuje nastavení wrap
+návìští (funkce sm_config_set_wrap) a nastavení side-set
+módu (funkce sm_config_set_sideset). Funkci pøedáváme offset
+programu, kterı nám døíve navrátila funkce pro zavedení
+programu do pamìti.</font></p>
+
+<p><font face="Arial">Funkcí <strong>sm_config_set_out_pins</strong>
+øekneme SM, na kterém pinu zaèínají vıstupní piny a kolik
+pinù to je. Jedná se o mapování pro instrukce OUT a MOV.
+Znamená to, e pokud instrukcemi OUT nebo MOV zapíšeme
+nìjaká data na vıstupní port PINS, zapíšou se data pøímo
+na vıstupní piny. Napø. zaèínají-li piny na GPIO2, zapíše
+se bit 0 odeslanıch dat do portu GPIO2.</font></p>
+
+<p><font face="Arial">Podobnì funkce <strong>sm_config_set_sideset_pins</strong>
+mapuje side-set piny nastavením èísla poèáteèního pinu.
+Poèet pinù zde nenastavujeme, ten byl urèen v døívìjší
+funkci sm_config_set_sideset.</font></p>
+
+<pre><font size="4"><strong>
+#define QVGA_CLKDIV	2	// SM divide clock ticks
+
+// join FIFO to send only
+sm_config_set_fifo_join(&amp;cfg, PIO_FIFO_JOIN_TX);
+
+// PIO clock divider
+sm_config_set_clkdiv(&amp;cfg, QVGA_CLKDIV);
+
+// shift right, autopull, pull threshold
+sm_config_set_out_shift(&amp;cfg, true, true, 32);
+
+</strong></font></pre>
+
+<p><font face="Arial">V dalším kroku pøipojíme pøijímací
+frontu RX FIFO k vysílací frontì TX FIFO - data nebudeme
+pøijímat, budeme jen vysílat, a tak mùeme zvıšit délku
+fronty na 8 úrovní.</font></p>
+
+<p><font face="Arial">Hodiny pro PIO odvodíme ze systémovıch
+hodin vydìlením èíslem 2. Vıstup jednoho pixelu v PIO
+programu zabere 5 PIO taktù a tím dosáhneme pixel clock 12.6
+MHz.</font></p>
+
+<p><font face="Arial">Nastavíme vıstupní posuvnı registr OSR.
+Bude se posouvat doprava (jako první pùjde ven niší bajt
+obrazovıch dat), pull se bude dìlat automaticky s hranicí 32
+bitù.</font></p>
+
+<p><font face="Arial">Konfiguraèní strukturu odešleme na SM. V
+parametru uvedeme vstupní bod, ze kterého program bude
+startovat. Zatím ale SM startovat nebudeme.</font></p>
+
+<pre><font size="4"><strong>
+// initialize state machine
+pio_sm_init(QVGA_PIO, QVGA_SM, QVGAOff+qvga_offset_entry, &amp;cfg);
+
+</strong></font></pre>
+
+<h2><a name="bufinit"></a><font face="Arial">Inicializace
+bufferù</font></h2>
+
+<p><font face="Arial">Data nebudeme do PIO odesílat softwarovì
+procesorem, ale pomocí DMA øadièe. To proto, abychom procesor
+zbyteènì nezatìovali, a také protoe procesor by
+nezajistil spojitı pøenos dat. K tomu si potøebujeme pøipravit
+buffery, jejich obsah se bude vysílat na PIO.</font></p>
+
+<p><font face="Arial">Jak víme z našeho PIO programu, základem
+øízení jsou 32-bitová slova obsahující nastavení èítaèe
+X a skokovou adresu. Na to si pøipravíme makro.</font></p>
+
+<pre><font size="4"><strong>
+// PIO command (jmp=program address, num=loop counter)
+#define QVGACMD(jmp, num) ( ((u32)((jmp)+QVGAOff)&lt;&lt;27) | (u32)(num))
+
+</strong></font></pre>
+
+<p><font face="Arial">V makru je 'jmp' adresa skoku. Budeme sem
+zadávat hodnoty návìští, které nám vygeneroval
+pøekladaè. Uvnitø makra se k návìštím pøiète offset
+poèátku programu a tím se zajistí správná hodnota skoku.
+Adresa skoku se posune do bitù 27..31, kde ji bude oèekávat
+PIO program. Na niších 27 bitech doplníme hodnotu pro
+èítaè X. Nesmíme ovšem zapomenout odeèítat od hodnoty
+potøebné korekce.</font></p>
+
+<p><font face="Arial">Budeme potøebovat 4 buffery.</font></p>
+
+<pre><font size="4"><strong>
+#define WIDTH		320	// display width
+
+#define QVGA_TOTAL	2002	// total clock ticks
+#define QVGA_HSYNC	240	// horizontal sync clock ticks
+#define QVGA_BP		121	// back porch clock ticks
+#define QVGA_FP		41	// front porch clock ticks
+
+// Scanline data buffers (commands sent to PIO)
+u32 ScanLineImg[3];	// image: HSYNC ... back porch ... image command
+u32 ScanLineFp;		// front porch
+u32 ScanLineDark[2];	// dark: HSYNC ... back porch + dark + front porch
+u32 ScanLineSync[2];	// vertical sync: VHSYNC ... VSYNC(back porch + dark + front porch)
+
+// image scanline data buffer: HSYNC ... back porch ... image command
+ScanLineImg[0] = QVGACMD(qvga_offset_hsync, QVGA_HSYNC-3); // HSYNC
+ScanLineImg[1] = QVGACMD(qvga_offset_dark, QVGA_BP-4); // back porch
+ScanLineImg[2] = QVGACMD(qvga_offset_output, WIDTH-2); // image
+
+// front porch
+ScanLineFp = QVGACMD(qvga_offset_dark, QVGA_FP-4); // front porch
+
+// dark scanline: HSYNC ... back porch + dark + front porch
+ScanLineDark[0] = QVGACMD(qvga_offset_hsync, QVGA_HSYNC-3); // HSYNC
+ScanLineDark[1] = QVGACMD(qvga_offset_dark, QVGA_TOTAL-QVGA_HSYNC-4); // back porch + dark + front porch
+
+// vertical sync: VHSYNC ... VSYNC(back porch + dark + front porch)
+ScanLineSync[0] = QVGACMD(qvga_offset_vhsync, QVGA_HSYNC-3); // VHSYNC
+ScanLineSync[1] = QVGACMD(qvga_offset_vsync, QVGA_TOTAL-QVGA_HSYNC-3); // VSYNC(back porch + dark + front porch)
+
+</strong></font></pre>
+
+<p><font face="Arial">Jednotlivé videolinky zaèínají HSYNC
+pulsem, za kterım následuje back porch, obrazová data a front
+porch. Obrazová videolinka pouívá buffery ScanLineImg a
+ScanLineFp. Pøi generování zaèínáme bufferem ScanLineImg. V
+prvním slovì obsahuje vyvolání programového segmentu hsync,
+kterı aktivuje HSYNC signál. V údaji délky nastavíme délku
+HSYNC na 240 taktù, ovšem musíme ji sníit o 3, co je
+základní reie èekací smyèky.</font></p>
+
+<p><font face="Arial">Po HSYNC následuje back porch - co je
+tma, po dobu 121 taktù. Údaj musíme sníit o 4.</font></p>
+
+<p><font face="Arial">Následuje pøíkaz pro odeslání
+obrazovıch dat. Pøíkaz provede skok na obsluhu
+&quot;output&quot;, s poètem WIDTH-2. Další data nebudeme
+odesílat z bufferù, ale pøímo z obrazové pamìti. Za
+obrazovımi daty odešleme front porch, z bufferu ScanLineFp.
+Front porch je nutné vdy odeslat po obrazovıch datech,
+protoe zajistí ztmavení obrazu na èernou barvou. Pøípadnı
+následující HSYNC signál u barvu nenastavuje.</font></p>
+
+<p><font face="Arial">Moná vás teï napadne otázka - jak PIO
+program rozliší obrazová data od øídicích slov? Jednoduše
+- neøeší to. :-) PIO má dobrou vlastnost v tom, e pøi
+správné funkci zùstává neustále synchronní s pøíchozími
+daty a tak ani po delší dobì nedojde k nesynchronitì.</font></p>
+
+<p><font face="Arial">Buffer ScanLineDark pouíváme k
+zobrazení tmavé linky bez obrazu, ve vertikálním front a back
+porch. Buffer obsahuje jen signál HSYNC následovanı tmavım
+obrazem a do konce linky.</font></p>
+
+<p><font face="Arial">Buffer ScanLineSync generuje signál VSYNC
+a od signálu tmavé linky se liší pouze aktivací signálu pro
+VSYNC. Nenastavuje èernou barvu na obrazové piny, protoe
+poèítáme s tím, e èerná barva je nastavená z
+pøedešlıch linek.</font></p>
+
+<p><font face="Arial">Kromì datovıch bufferù, pro datovı DMA,
+potøebujeme i øídicí buffery, pro øídicí DMA. Podrobnìji
+v dalších odstavcích.</font></p>
+
+<pre><font size="4"><strong>
+// Scanline control buffers
+#define CB_MAX 8	// size of one scanline control buffer (1 link to data buffer requires 2x u32)
+u32 ScanLineCB[2*CB_MAX]; // 2 control buffers
+
+// control buffer 1 - initialize to VSYNC
+ScanLineCB[0] = 2; // send 2x u32 (send ScanLineSync)
+ScanLineCB[1] = (u32)&amp;ScanLineSync[0]; // VSYNC data buffer
+ScanLineCB[2] = 0; // stop mark
+ScanLineCB[3] = 0; // stop mark
+
+// control buffer 1 - initialize to VSYNC
+ScanLineCB[CB_MAX+0] = 2; // send 2x u32 (send ScanLineSync)
+ScanLineCB[CB_MAX+1] = (u32)&amp;ScanLineSync[0]; // VSYNC data buffer
+ScanLineCB[CB_MAX+2] = 0; // stop mark
+ScanLineCB[CB_MAX+3] = 0; // stop mark
+
+</strong></font></pre>
+
+<h2><a name="dmainit"></a><font face="Arial">Inicializace DMA</font></h2>
+
+<p><font face="Arial">Z pøedchozích øádkù u víme, jaká
+data chceme odesílat na PIO a jak je dále zpracovat. A jak jsem
+se u zmínil, nebudeme je odesílat programovì, ale pomocí
+DMA øadièe. Pro kadou videolinku chceme odeslat nìkolik
+datovıch bufferù. Mohli bychom pro kadı buffer aktivovat DMA
+pøenos programovì, co je pomìrnì dost úkonù. Raspberry
+Pico má pro tento úèel lepší øešení - zøetìzení DMA
+øadièù. Namísto abychom datovı DMA konfigurovali pro kadı
+buffer zvláš, necháme to dìlat další DMA.</font></p>
+
+<p><font face="Arial">Zøetìzení bude fungovat následujícím
+zpùsobem. Data bude na PIO odesílat první DMA kanál, datovı.
+Kdy dokonèí poadovanı úkol, aktivuje novı pøenos
+druhého DMA kanálu, øídicího. Øídicí DMA kanál pøenese
+další øídicí informace do nastavení datového kanálu a
+spustí bìh datového kanálu. Data pro øidicí DMA jsou
+uloena v øídicím bufferu. Poslední øídicí data obsahují
+hodnotu nula. Øídicí DMA tuto hodnotu také pøenese do
+nastavení datového DMA kanálu, ale ten rozezná nulovou
+hodnotu, oznaèující konec pøenosu, a aktivuje IRQ signál.
+Tím se vyvolá pøerušení hlavního procesoru, kterı znovu
+nakonfiguruje øídicí DMA pro novı pøenos. IRQ se generuje na
+konci kadé videolinky. Obsluha pøerušení aktivuje pøenos
+pro další videolinku a mezitím pøipraví buffery pro
+pøíští pøenos.</font></p>
+
+<p><font face="Arial">Nejdøíve pøipravíme konfiguraci
+øídicího DMA kanálu.</font></p>
+
+<pre><font size="4"><strong>
+#define QVGA_DMA_CB	0	// DMA control block of base layer
+#define QVGA_DMA_PIO	1	// DMA copy data to PIO (raises IRQ0 on quiet)
+
+// prepare DMA default config
+dma_channel_config cfg = dma_channel_get_default_config(QVGA_DMA_CB);
+
+// increment address on read from memory
+channel_config_set_read_increment(&amp;cfg, true);
+
+// increment address on write to DMA port
+channel_config_set_write_increment(&amp;cfg, true);
+
+// each DMA transfered entry is 32-bits
+channel_config_set_transfer_data_size(&amp;cfg, DMA_SIZE_32);
+
+// write ring - wrap to 8-byte boundary (TRANS_COUNT and READ_ADDR_TRIG of data DMA)
+channel_config_set_ring(&amp;cfg, true, 3);
+
+// DMA configure
+dma_channel_configure(
+	QVGA_DMA_CB,		// channel
+	&amp;cfg,			// configuration
+	&amp;dma_hw-&gt;ch[QVGA_DMA_PIO].al3_transfer_count, // write address
+	&amp;ScanLineCB[0],		// read address - as first, control buffer 1 will be sent out
+	2,			// number of transfers in u32 (number of transfers per one request from data DMA)
+	false			// do not start yet
+);
+
+</strong></font></pre>
+
+<p><font face="Arial">Funkcí <strong>dma_channel_get_default_config</strong>
+si pøipravíme implicitní konfiguraèní strukturu.</font></p>
+
+<p><font face="Arial">Funkcí <strong>channel_config_set_read_increment</strong>
+zvolíme automatickou inkrementaci ètecí adresy. Øídicí DMA
+ète data z øídicích bufferù a je tedy potøeba, aby se po
+kadém ètení adresa posunula na další slovo.</font></p>
+
+<p><font face="Arial">Funkcí <strong>channel_config_set_write_increment</strong>
+zapneme automatickou inkrementaci zápisové adresy. Øídicí
+DMA kanál bude pøenášet slova z øídicího bufferu pøímo
+do øídicích registrù datového DMA kanálu. Budou se
+pøenášet pøi kadém pøenosu 2 slova po 32 bitech, je tedy
+nutná automatická inkrementace adresy.</font></p>
+
+<p><font face="Arial">Velikost jedné jednotky pøenášenıch
+dat je funkcí <strong>channel_config_set_transfer_data_size</strong>
+nastavena na 32 bitù. Kadı z øídicích registrù DMA
+datového kanálu je 32-bitovı.</font></p>
+
+<p><font face="Arial">Funkcí <strong>channel_config_set_ring</strong>
+je nastavená velikost kruhu zápisovıch adres na 8 bajtù.
+Budou se pøenášet 2 slova po 32 bitech, co je dohromady 8
+bajtù. Parametr &quot;3&quot; pøedstavuje mocninu 2 velikosti
+kruhovıch dat, tedy 8 bajtù. DMA kanál pøenese 2 slova do
+øídicích registrù, poté se ukazatel resetuje o 8 bajtù
+zpìt.</font></p>
+
+<p><font face="Arial">Funkcí <strong>dma_channel_configure</strong>
+se DMA kanál nakonfiguruje podle pøipravené konfiguraèní
+struktury. Jako zápisová adresa je zvolen tøetí registr ze
+ètvrté sady aliasù registrù - tj. registry trans_count a
+read_addr. Kadı DMA kanál lze øídit pomocí 4 registrù a
+tyto registry jsou uspoøádány ve 4 variantách poøadí. U
+kadé varianty platí, e zápisem do 4. registru se aktivuje
+pøenos DMA kanálu. Jednotlivé aliasy DMA registrù jsou:</font></p>
+
+<pre><font size="4"><strong>
+//			+0x0		+0x4		+0x8		+0xC (Trigger)
+// 0x00 (alias 0):	READ_ADDR	WRITE_ADDR	TRANS_COUNT	CTRL_TRIG
+// 0x10 (alias 1):	CTRL		READ_ADDR	WRITE_ADDR	TRANS_COUNT_TRIG
+// 0x20 (alias 2):	CTRL		TRANS_COUNT	READ_ADDR	WRITE_ADDR_TRIG
+// 0x30 (alias 3):	CTRL		WRITE_ADDR	TRANS_COUNT	READ_ADDR_TRIG ... we use this!
+
+</strong></font></pre>
+
+<p><font face="Arial">Kadım pøenosem se pøenesou 2 slova po
+32 bitech. DMA kanál zatím startovat nebudeme.</font></p>
+
+<p><font face="Arial">Dále si pøipravíme datovı DMA kanál.</font></p>
+
+<pre><font size="4"><strong>
+// prepare DMA default config
+cfg = dma_channel_get_default_config(QVGA_DMA_PIO);
+
+// increment address on read from memory
+channel_config_set_read_increment(&amp;cfg, true);
+
+// do not increment address on write to PIO
+channel_config_set_write_increment(&amp;cfg, false);
+
+// each DMA transfered entry is 32-bits
+channel_config_set_transfer_data_size(&amp;cfg, DMA_SIZE_32);
+
+// DMA data request for sending data to PIO
+channel_config_set_dreq(&amp;cfg, pio_get_dreq(QVGA_PIO, QVGA_SM, true));
+
+// chain channel to DMA control block
+channel_config_set_chain_to(&amp;cfg, QVGA_DMA_CB);
+
+// raise the IRQ flag when 0 is written to a trigger register (end of chain)
+channel_config_set_irq_quiet(&amp;cfg, true);
+
+// set high priority
+cfg.ctrl |= DMA_CH0_CTRL_TRIG_HIGH_PRIORITY_BITS;
+
+// DMA configure
+dma_channel_configure(
+	QVGA_DMA_PIO,		// channel
+	&amp;cfg,			// configuration
+	&amp;QVGA_PIO-&gt;txf[QVGA_SM], // write address
+	NULL,			// read address
+	0,			// number of transfers in u32
+	false			// do not start immediately
+);
+
+</strong></font></pre>
+
+<p><font face="Arial">Podobnì, jako u øídicího DMA kanálu,
+zvolíme automatickou inkrementaci ètecí adresy a velikost
+jednotky dat 32 bitù. U zápisové adresy nebudeme volit
+automatickou inkrementaci - budeme zapisovat data vdy jen na
+jednu adresu, do TX FIFO øadièe PIO SM.</font></p>
+
+<p><font face="Arial">Funkcí <strong>channel_config_set_dreq</strong>
+nastavíme, e DMA pøenos se bude spouštìt na poadavek dat
+od PIO v pøípadì nedostatku dat ve vysílacím FIFO.</font></p>
+
+<p><font face="Arial">Funkce <strong>channel_config_set_chain_to</strong>
+zajistí zøetìzení datového DMA s øídicím DMA.
+Dokonèí-li datovı DMA kanál svùj pøenos, probudí øídicí
+DMA kanál pomocí zøetìzení, a ten mu odešle nové øídicí
+informace.</font></p>
+
+<p><font face="Arial">Funkce <strong>channel_config_set_irq_quiet</strong>
+aktivuje &quot;tichı reim&quot;. Poslední øídicí
+informace, kterou øídicí DMA kanál pøedá datovému DMA
+kanálu (na konci videolinky), bude hodnota 0. Zápisem hodnoty 0
+do spouštìcího (posledního) registru se nenastartuje další
+pøenos, ale datovı DMA kanál aktivuje IRQ signál, kterı
+vyvolá pøerušení hlavního procesoru a zahájení nového
+pøenosu.</font></p>
+
+<p><font face="Arial">Datovému kanálu je nastavena vyšší
+priorita. Jednotlivé DMA kanály jsou procesorem obsluhovány
+postupnì (do kruhu), s upøednostnìním kanálù s vyšší
+prioritou. QVGA generátor vyaduje vysokou prioritu -
+zpodìní DMA pøenosu by mohlo znamenat vıpadek obrazového
+signálu (stává se napø. pøi ètení dat z externí Flash
+pamìti).</font></p>
+
+<p><font face="Arial">Jako zápisová adresa se zvolí vysílací
+FIFO port PIO SM øadièe. Ostatní parametry není nutné
+nastavovat, nastaví je øídicí DMA kanál pøi prvním
+pøenosu.</font></p>
+
+<p><font face="Arial">Nakonec nakonfigurujeme IRQ0, kterı bude
+aktivován datovım DMA na konci kadé videolinky.</font></p>
+
+<pre><font size="4"><strong>
+// enable DMA channel IRQ0
+dma_channel_set_irq0_enabled(QVGA_DMA_PIO, true);
+
+// set DMA IRQ handler
+irq_set_exclusive_handler(DMA_IRQ_0, QVgaLine);
+
+// set highest IRQ priority
+irq_set_priority(DMA_IRQ_0, 0);
+
+</strong></font></pre>
+
+<p><font face="Arial">Funkcí <strong>dma_channel_set_irq0_enabled</strong>
+se povolí, e datovı DMA kanál bude aktivovat signál IRQ0.</font></p>
+
+<p><font face="Arial">Funkce <strong>irq_set_exclusive_handler</strong>
+nastaví adresu funkce pro obsluhu IRQ0 pøerušení. Pouijeme
+exkluzivní obsluhu, protoe obsluha musí bıt rychlá, bez
+prodlev, jinak by mohl obraz vypadávat. Ze stejného dùvodu je
+pro pøerušení IRQ0 nastavena maximální priorita.</font></p>
+
+<h2><a name="interrupt"></a><font face="Arial">Obsluha
+pøerušení</font></h2>
+
+<p><font face="Arial">Na konci kadé videolinky vyvolá datovı
+DMA kanál pøerušení IRQ0. Vyvolá se obsluha, ve které
+aktivujeme DMA pøenos pro další videolinku a pøipravíme
+buffery pro pøíští videolinku. Pøerušení se aktivuje ve
+chvíli, kdy se do vysílacího FIFO odešlou poslední obrazová
+data a pøíkaz pro front porch, tedy pøed pøíštím HSYNC.
+Prodleva pro front porch a velikost FIFO bufferu zajistí
+prodlevu k nastavení dalšího pøenosu. U obsluhy si tak lze
+vystaèit s C kódem bez assembleru, pøesto ale èasu není
+nazbyt a je potøeba rychlá odezva.</font></p>
+
+<pre><font size="4"><strong>
+u32* ScanLineCBNext;	// next control buffer
+
+// saved integer divider state
+hw_divider_state_t SaveDividerState;
+
+// QVGA DMA handler - called on end of every scanline
+void __not_in_flash_func(QVgaLine)()
+{
+	// Clear the interrupt request for DMA control channel
+	dma_hw-&gt;ints0 = (1u &lt;&lt; QVGA_DMA_PIO);
+
+	// update DMA control channel and run it
+	dma_channel_set_read_addr(QVGA_DMA_CB, ScanLineCBNext, true);
+
+	// save integer divider state
+	hw_divider_save_state(&amp;SaveDividerState);
+
+	...
+
+	// restore integer divider state
+	hw_divider_restore_state(&amp;SaveDividerState);
+}
+
+</strong></font></pre>
+
+<p><font face="Arial">Z dùvodu rychlé odezvy je záhlaví
+funkce oznaèeno typem <strong>__not_in_flash_func</strong>. V
+tom pøípadì je celı kód funkce pøi startu programu
+zkopírován do RAM pamìti, odkud je spouštìn, namísto
+spouštìní z externí Flash pamìti. U krátkého programu
+rozdíl nezpozorujete, ale bude-li váš program obsahovat více
+kódu, nevejdou se instrukce programu do cache pamìti procesoru
+a budou naèítány z externí Flash pamìti. To je pomìrnì
+zdlouhavá operace. Pokud by byl kód pøerušení naèítán z
+externí Flash, znamenalo by to pøíliš dlouhou prodlevu a tím
+i vıpadek videosignálu.</font></p>
+
+<p><font face="Arial">Na zaèátku funkce je nejdøíve
+vynulován poadavek pøerušení IRQ0. To kdyby se funkce
+zdrela v obsluze, tak a se neztratí pøípadnı pøíští
+poadavek.</font></p>
+
+<p><font face="Arial">Funkcí <strong>dma_channel_set_read_addr</strong>
+se nastaví ètecí adresa øídicího DMA kanálu pro novı
+pøenos a DMA pøenos se spustí. Ostatní parametry, jako poèet
+pøenesenıch dat, zùstávají stejné z døívìjšího
+nastavení.</font></p>
+
+<p><font face="Arial">Funkce <strong>hw_divider_save_state</strong>
+uchová registry hardwarové dìlièky do pomocného bufferu.
+Hardwarová dìlièka je specialita Raspberry Pico. Umoòuje
+32-bitové celoèíselné dìlení a vıpoèet trvá 8
+systémovıch taktù. Její stav není automaticky uchován v
+obsluze pøerušení, protoe nepatøí do standardních
+registrù procesoru. Pokud by pøekladaè zde v obsluze pouil
+celoèíselné dìlení, obsah dìlièky by se zmìnil a hlavní
+program by mohl dostat chybnı vıpoèet. Obsah dìlièky se
+obnoví funkcí <strong>hw_divider_restore_state</strong> na
+konci obsluhy pøerušení. Kódu uvnitø obsluhy se budeme
+vìnovat dále. Pøed uloením stavu dìlièky je potøeba
+poèkat minimální èas 8 taktù hodin, aby se dokonèila
+provádìná operace, ale to je v tomto pøípadì zajištìno.</font></p>
+
+<pre><font size="4"><strong>
+int QVgaBufInx;	// current running control buffer
+
+// switch current buffer index (bufinx = current preparing buffer, QVgaBufInx = current running buffer)
+int bufinx = QVgaBufInx;
+QVgaBufInx = bufinx ^ 1;
+
+// prepare control buffer to be processed
+u32* cb = &amp;ScanLineCB[bufinx*CB_MAX];
+ScanLineCBNext = cb;
+
+</strong></font></pre>
+
+<p><font face="Arial">Pøi obsluze øídicího DMA pouíváme 2
+øídicí buffery <strong>ScanLineCB</strong>, které mezi sebou
+neustále støídáme. Kterı buffer se aktuálnì pouívá,
+nám øíká promìnná <strong>QVgaBufInx</strong>. Pøi kadé
+obsluze pøerušení pøeklopíme èíslo aktuálního bufferu a
+pøipravíme si ukazatel na øídicí buffer, kterı bude pouit
+v pøíští obsluze.</font></p>
+
+<pre><font size="4"><strong>
+volatile int QVgaScanLine;	// current processed scan line 0... (next displayed scan line)
+volatile u32 QVgaFrame;		// frame counter
+
+// increment scanline (1..)
+int line = QVgaScanLine; 	// current scanline
+line++; 			// new current scanline
+if (line &gt;= QVGA_VTOT) 		// last scanline?
+{
+	QVgaFrame++;		// increment frame counter
+	line = 0; 		// restart scanline
+}
+QVgaScanLine = line;		// store new scanline
+
+</strong></font></pre>
+
+<p><font face="Arial">Promìnná <strong>QVgaScanLine</strong>
+nás informuje o tom, která videolinka aktuálnì probíhá. V
+kadé obsluze pøerušení ji inkrementujeme a pokud dosáhne
+konce snímku, vynulujeme ji a souèasnì inkrementujeme èítaè
+snímkù <strong>QVgaFrame</strong>. Èítaè videolinek mùeme
+pouívat v hlavním programu k detekci zatemòovacího pulsu
+(pro &quot;èisté&quot; zobrazení bez narušení obrazu) a
+èítaè snímkù k èasování a synchronizaci programu.</font></p>
+
+<p><font face="Arial">V další obsluze budeme pøipravovat obsah
+øídicího bufferu pro další videolinku, v závislosti podle
+èísla videolinky.</font></p>
+
+<pre><font size="4"><strong>
+// check scanline
+line -= QVGA_VSYNC;
+if (line &lt; 0)
+{
+	// VSYNC
+	*cb++ = 2;
+	*cb++ = (u32)&amp;ScanLineSync[0];
+}
+
+</strong></font></pre>
+
+<p><font face="Arial">Pøi obsluze linky s vertikální
+synchronizací uloíme do øídicího bufferu adresu datového
+bufferu s øídicími kódy pro vertikální synchronizaci.
+Buffer obsahuje 2 slova po 32 bitech - HSYNC a zatemnìní.</font></p>
+
+<pre><font size="4"><strong>
+// front porch and back porch
+line -= QVGA_VBACK;
+if ((line &lt; 0) || (line &gt;= QVGA_VACT))
+{
+	// dark line
+	*cb++ = 2;
+	*cb++ = (u32)&amp;ScanLineDark[0];
+}
+
+</strong></font></pre>
+
+<p><font face="Arial">V obsluze front a back porch vysíláme
+pouze èernı obraz, tedy 2 slova z bufferu zatemnìní.</font></p>
+
+<pre><font size="4"><strong>
+// prepare image line
+line &gt;&gt;= 1;
+
+// HSYNC ... back porch ... image command
+*cb++ = 3;
+*cb++ = (u32)&amp;ScanLineImg[0];
+
+// image data
+*cb++ = WIDTH/4;
+*cb++ = (u32)&amp;pFrameBuf[line*WIDTH];
+
+// front porch
+*cb++ = 1;
+*cb++ = (u32)&amp;ScanLineFp;
+
+</strong></font></pre>
+
+<p><font face="Arial">V obsluze zobrazení obrazu vydìlíme
+èíslo videolinky èíslem 2, protoe linky budou zdvojené.
+Namísto 480 videolinek budeme generovat 240 linek obrazu.
+Nejdøíve vloíme odkaz na buffer se zaèátkem videolinky -
+HSYNC, back porch a pøíkaz k vysílání dat. Dále uloíme
+odkaz na obrazová data. Vypoèteme adresu v obrazovém bufferu,
+jako délku dat pouijeme šíøku obrazu/4 (vysílá se po 32
+bitech). Z tohoto dùvodu je nutné, aby obrazové buffery byly
+vdy zarovnané na 32 bitù. Po obrazovıch datech odešleme
+front porch, jako 1 øídicí slovo.</font></p>
+
+<pre><font size="4"><strong>
+// end mark
+*cb++ = 0;
+*cb = 0;
+
+</strong></font></pre>
+
+<p><font face="Arial">Na závìr všech segmentù ukonèíme
+øídicí buffer nulami. To je koncová znaèka, která
+pøíštì zajistí vyvolání nového IRQ pøerušení.</font></p>
+
+<p><font face="Arial">Nejdelší øídicí kód je pro obsluhu
+zobrazení. Do øídicího bufferu se uloí 6 øídicích slov,
+plus koncová znaèka 2 slova. To je celkem 8 slov. Z toho
+dùvodu je velikost jednoho øídicího bufferu nastavena na 8
+slov, pomocí definice <strong>CB_MAX</strong>. V pøípadì
+modifikací kódu je na to potøeba pamatovat a pøípadnì
+velikost bufferu zvìtšit.</font></p>
+
+<h2><a name="vgainit"></a><font face="Arial">Inicializace QVGA
+knihovny</font></h2>
+
+<p><font face="Arial">Funkce pro celkovou inicializaci QVGA
+knihovny bude mít následující obsah.</font></p>
+
+<pre><font size="4"><strong>
+#define QVGA_VCO	(1008*1000*1000) // PLL VCO frequency in Hz
+#define QVGA_PD1	4	// PLL PD1
+#define QVGA_PD2	2	// PLL PD2
+
+// initialize system clock
+set_sys_clock_pll(QVGA_VCO, QVGA_PD1, QVGA_PD2);
+
+// initialize PIO
+QVgaPioInit();
+
+// initialize scanline buffers
+QVgaBufInit();
+
+// initialize DMA
+QVgaDmaInit();
+
+// initialize parameters
+QVgaScanLine = 0; // currently processed scanline
+QVgaBufInx = 0; // at first, control buffer 1 will be sent out
+QVgaFrame = 0; // current frame
+ScanLineCBNext = &amp;ScanLineCB[CB_MAX]; // send control buffer 2 next
+
+// enable DMA IRQ
+irq_set_enabled(DMA_IRQ_0, true);
+
+// start DMA
+dma_channel_start(QVGA_DMA_CB);
+
+// run state machine
+pio_sm_set_enabled(QVGA_PIO, QVGA_SM, true);
+
+</strong></font></pre>
+
+<p><font face="Arial">Pøed inicializací knihovny jsou funkcí <strong>set_sys_clock_pll</strong>
+nastaveny systémové hodiny na 126 MHz. Funkci je moné uvést
+v hlavní funkci programu nebo ji úplnì vynechat (ponechat
+implicitní nastavení 125 MHz) a pouít trochu jiné
+nastavení èasování QVGA knihovny - mùe se ovšem projevit
+chybìjícími 2 pixely na zaèátku a konci obrazu.</font></p>
+
+<p><font face="Arial">Funkcí <strong>QVgaPioInit</strong> se
+inicializuje PIO. Funkcí <strong>QVgaBufInit</strong> se
+pøipraví datové a øídicí buffery. Funkcí <strong>QVgaDmaInit</strong>
+se inicializují DMA kanály.</font></p>
+
+<p><font face="Arial">Nastaví se globální promìnné na
+vıchozí hodnoty - start videolinkou 0, start prvního
+øídicího bloku, pøíštì bude øídicí blok 1.</font></p>
+
+<p><font face="Arial">Funkcí <strong>irq_set_enabled</strong> se
+povolí vyvolání pøerušení IRQ0.</font></p>
+
+<p><font face="Arial">Funkcí <strong>dma_channel_start</strong>
+se odstartuje øídicí DMA kanál. Ten naète první øídicí
+blok a aktivuje datovı DMA kanál.</font></p>
+
+<p><font face="Arial">Funkcí <strong>pio_sm_set_enabled</strong>
+se odstartuje PIO program. Program zaène odèerpávat data z
+FIFO, vyvolávat poadavky na DMA pøenos a vysílat data na
+vıstupní porty.</font></p>
+
+<pre><font size="4"><strong>
+#define FRAMESIZE (WIDTH*HEIGHT) // display frame size in bytes (=76800)
+
+// display frame buffer
+ALIGNED u8 FrameBuf[FRAMESIZE];
+
+pFrameBuf = FrameBuf; // front buffer
+pDrawBuf = FrameBuf; // back buffer
+
+</strong></font></pre>
+
+<p><font face="Arial">Pøed aktivací QVGA knihovny je nutné
+pøipravit v hlavním programu obrazovı buffer. Buffer musí
+mít velikost <strong>FRAMESIZE</strong> a musí bıt zarovnanı
+na 32 bitù (to zajistí makro ALIGNED). Ukazatel na obrazovı
+buffer je potøeba nastavit do promìnné <strong>pFrameBuf</strong>.
+Je-li pouívána knihovna pro kreslení, je potøeba nastavit i
+ukazatel do promìnné <strong>pDrawBuf</strong>. Knihovna
+umoòuje pouívat jinı buffer pro kreslení a jinı pro
+zobrazení. Je tak moné pøipravit obraz bez zobrazení a bez
+vzniku pøechodnıch artefaktù a obrazy poté pøepnout.</font></p>
+
+<h2><a name="multicore"></a><font face="Arial">Multicore</font></h2>
+
+<p><font face="Arial">Obsluha QVGA zobrazení je pomìrnì
+choulostivá záleitost. Pokud se pøenosovı øetìzec nìkde
+pøeruší nebo pozastaví, dojde k vıpadku generovaného
+signálu, co mùe znamenat ztmavení obrazu QVGA monitoru i
+na nìkolik sekund. Proto je potøeba dbát na co nejlepší
+provozní podmínky QVGA generátoru.</font></p>
+
+<p><font face="Arial">Jedním monım zádrhelem je
+pøerušení. V dobì zpracování jiného pøerušení nemùe
+procesor obslouit poadavek pøerušení od obsluhy QVGA
+signálu, obraz by mohl vypadnout. To by znamenalo, e by nebylo
+moné pouívat jiná pøerušení ne z generátoru QVGA
+signálu.</font></p>
+
+<p><font face="Arial">Naštìstí procesor Rasberry Pico má na
+to øešení, pomocí druhého jádra procesoru. Obsluhy
+pøerušení jader procesoru jsou na sobì nezávislé. Je tedy
+moné vyhradit druhé jádro (s èíslem 1) pro obsluhu QVGA
+obrazu a první jádro (s èíslem 0) pro chod hlavního programu
+a obsluhy ostatních pøerušení. Obsluha QVGA signálu je
+èasovì nenároèná a proto není problém pouívat druhé
+jádro i pro chod programù. Omezení spoèívá pouze ve
+vyhrazení pøerušení v druhém jádru pouze pro QVGA.</font></p>
+
+<pre><font size="4"><strong>
+// initialize QVGA
+// QVgaInit();
+multicore_launch_core1(QVgaCore);
+
+void (* volatile Core1Fnc)() = NULL; // core 1 remote function
+
+// QVGA core
+void QVgaCore()
+{
+	void (*fnc)();
+
+	// initialize QVGA
+	QVgaInit();
+
+	// infinite loop
+	while (true)
+	{
+		// data memory barrier
+		__dmb();
+
+		// execute remote function
+		fnc = Core1Fnc;
+		if (fnc != NULL)
+		{
+			fnc();
+			__dmb();
+			Core1Fnc = NULL;
+		}
+	}
+}
+
+// execute core 1 remote function
+void Core1Exec(void (*fnc)())
+{
+	__dmb();
+	Core1Fnc = fnc;
+	__dmb();
+}
+
+// check if core 1 is busy (executing remote function)
+Bool Core1Busy()
+{
+	__dmb();
+	return Core1Fnc != NULL;
+}
+
+// wait if core 1 is busy (executing remote function)
+void Core1Wait()
+{
+	while (Core1Busy()) {}
+}
+
+</strong></font></pre>
+
+<p><font face="Arial">Funkce <strong>QVgaCore</strong> je obsluha
+QVGA displeje v druhém jádru procesoru. Obsluhu spustíme
+funkcí <strong>multicore_launch_core1</strong>. Funkce pøi
+svém startu spustí obsluhu QVGA na druhém jádru funkcí
+QVgaInit. Poté procesor bìhá v nekoneèné smyèce a èeká na
+pøípadnou aktivaci dálkové funkce. Pøijde-li od hlavního
+procesoru povel k provedení dálkové funkce (voláním funkce
+Core1Exec), funkce se provede a pokraèuje se v nekoneèné
+smyèce.</font></p>
+
+<p><font face="Arial">Povšimnìte si funkcí <strong>__dmb</strong>.
+To je instrukce datové bariéry. Datová bariéra zajistí, e
+jádro procesoru zajistí uloení své zápisové cache pamìti
+do sdílené RAM pamìti a tím data uvidí i druhé jádro. Bez
+datové bariéry by se mohlo stát, e jedno jádro nastaví
+obsah promìnné, ale zmìnìná data zùstanou jen v cache
+pamìti jednoho jádra, a druhé jádro zmìnìná data neuvidí.</font></p>
+
+<p><font face="Arial">Funkce <strong>Core1Exec</strong> slouí
+ke spuštìní funkce v druhém jádru. Funkcí <strong>Core1Busy</strong>
+mùe první jádro sledovat, zda se funkce stále ještì
+zpracovává. Pøípadnì mùe funkcí <strong>Core1Wait</strong>
+poèkat, a se funkce dokonèí. Pøi pøedávání dat mezi
+jádry procesoru pamatujte na vkládání datové bariéry __dmb.</font></p>
+
+<p><font face="Arial">Abychom nemuseli QVGA obsluhu spouštìt z
+hlavního programu, je do knihovny doplnìno automatická
+inicializace knihovny pomocí následujícího kódu.</font></p>
+
+<pre><font size="4"><strong>
+// auto initialization
+Bool QVgaAutoInit()
+{
+	multicore_launch_core1(QVgaCore);
+	return True;
+}
+
+Bool QVgaAutoInitOK = QVgaAutoInit();
+
+</strong></font></pre>
+
+<h2><a name="support"></a><font face="Arial">Podpùrné funkce</font></h2>
+
+<p><font face="Arial">Kromì hlavního jádra obsahuje PicoQVGA
+knihovna i další podpùrné funkce. Programy a utility jsou ve
+Windows EXE formátu.</font></p>
+
+<p><font face="Arial"><strong>draw</strong> - je knihovna pro
+kreslení do obrazového bufferu. Pøed pouitím je nutné
+nastavit promìnnou pDrawBuf na adresu obrazového bufferu, s
+rozmìry WIDTH x HEIGHT. Knihovna obsahuje funkce pro kreslení
+obdélníku, rámu, kruhu, krunice, texty a obrázky. Ukazatel
+na obrazovı buffer je moné nastavit jinı ne pro zobrazení
+a tak si pøipravit obraz na pozadí, a a po vykreslení
+obrazové buffery pøepnout.</font></p>
+
+<p><font face="Arial"><strong>rand</strong> - generátor
+náhodného èísla. Knihovna generuje náhodná èísla s
+32-bitovım seed, s rùznou velikostí vıstupních dat a ve
+volitelnıch rozsazích. Poznámka: nepouívejte ke
+generování náhodného èísla v intervalu funkci modulo %,
+vısledná náhodnost není rovnomìrná. Knihovna zajistí
+rovnomìrnìjší rozloení pravdìpodobnosti.</font></p>
+
+<p><font face="Arial"><strong>pwmsnd</strong> - zvukovı vıstup.
+Knihovna aktivuje PWM generátor na pøíslušném vıstupním
+pinu. K pinu lze (pøes RC filtr) pøipojit sluchátka nebo
+externí zesilovaè. Zvukovı soubor má formát PCM 22050 Hz,
+mono, 8 bitù unsigned. Je moné jak jednorázové pøehrátí
+zvuku, tak i opakované pøehrávání s promìnlivou rychlostí.</font></p>
+
+<p><font face="Arial"><strong>pal332</strong> - program pro
+vygenerování barevnıch palet RGB332 pro knihovnu PicoQVGA.
+Vytvoøenı soubor pal332.act lze pouít v programu Photoshop
+ke konverzi obrázkù na palety knihovny PicoQVGA.</font></p>
+
+<p><font face="Arial"><strong>RaspPicoImg</strong> - utilita pro
+import obrázkù do zdrojového kódu. Obrázek musí bıt BMP v
+8-bitovém módu RGB332 bez komprese, se zapnutım pøepínaèem
+pro obrácení poøadí linek.</font></p>
+
+<p><font face="Arial"><strong>PicoClock</strong> - vıpoèet
+nastavení PLL generátoru systémovıch hodin.</font></p>
+
+<p><font face="Arial"><strong>RaspPicoSnd</strong> - konverze
+zvukù do zdrojového kódu. Zvuky musí bıt WAV ve formátu
+PCM, 8 bitù unsigned mono, 22050 Hz.</font></p>
+
+<h2><a name="demo"></a><font face="Arial">Ukázkové programy</font></h2>
+
+<p><font face="Arial">Programy jsou pøipravené pro ovládání
+klávesnicí pøes konzoli PC. Jako konzoli lze pouít program </font><a
+href="dwn/begPutty.zip"><font face="Arial">begPutty</font></a><font
+face="Arial"> a virtuální sériovı USB port. Nìkteré
+programy pouívají zvuk - generování PWM zvuku pøes pin GP0
+(oznaèeno poznámkou &quot;(zvuk)&quot;).</font></p>
+<div align="left">
+
+<table border="0" cellpadding="2">
+    <tr>
+        <td align="right" width="260"><a href="img/balloons.jpg"><font
+        face="Arial"><img src="img/balloons_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Balloons</strong>
+        - demonstrace kreslení do back bufferu, poletující balonky
+        (celkem 23 sprajtù).</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/draw.jpg"><font
+        face="Arial"><img src="img/draw_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Draw</strong>
+        - demonstrace kreslení grafickıch prvkù. Pro ukázku
+        se støídá pomalé vykreslování a kreslení
+        maximální rychlostí.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/earth.jpg"><font
+        face="Arial"><img src="img/earth_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Earth</strong>
+        - rotující zemìkoule. Softwarová sférická
+        transformace obrázku.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/eggs.jpg"><font
+        face="Arial"><img src="img/eggs_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Eggs</strong>
+        - logická hra (zvuk). Vychází ze hry Reversi. Cílem
+        je získat co nejvíce vlastních kamenù. Jeden hráè
+        mìní kameny ve smìru slepice-kuøe-vejce, druhı
+        hráè opaènım smìrem. Ovládání: L vpravo, I
+        nahoru, J vlevo, K dolù, H pomoc, Q konec, P 2 hráèi,
+        D demo, mezerník poloení kamene, Enter ok. Lze hrát
+        proti jinému hráèi i proti poèítaèi.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/fifteen.jpg"><font
+        face="Arial"><img src="img/fifteen_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Fifteen</strong>
+        - logická hra (zvuk). Cílem je seøadit kameny v
+        poøadí 1 a 15. Ovládání: L vpravo, I nahoru, J
+        vlevo, K dolù, Q nová hra.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/flag.jpg"><font
+        face="Arial"><img src="img/flag_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Flag</strong>
+        - vlající vlajka.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/hello.jpg"><font
+        face="Arial"><img src="img/hello_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Hello World</strong>
+        - nejjednodušší ukázkovı pøíklad pouití
+        knihovny PicoQVGA.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/hypno.jpg"><font
+        face="Arial"><img src="img/hypno_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Hypno</strong>
+        - hypnotizující rotující obrazec. Ukázka maticové
+        transformace obrázku.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/life.jpg"><font
+        face="Arial"><img src="img/life_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Life</strong>
+        - simulátor ivota bunìk (celulární automat). Buòky
+        se v kadém kroku mìní podle poètu sousedních
+        bunìk: pro 1 a ménì buòka zaniká na osamocení, pro
+        4 a více buòka zaniká na pøemnoení, pro 3 vznikne
+        nová buòka, pro 2 není zmìna. Ve høe se lze
+        pøepínat mezi 10 obrazovkami (sloty) a pøenášet
+        obraz mezi nimi pomocí schránky. V kadém slotu je
+        pøedpøipravena definice populárních kombinací.
+        Ovládání: L vpravo, I nahoru, J vlevo, K dolù, C
+        kopie do schránky, V vloení ze schránky, D vymazání
+        plochy, mezerník zmìna buòky, Enter start/stop
+        automatu, 0-9 vıbìr slotu.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/lines.jpg"><font
+        face="Arial"><img src="img/lines_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Lines</strong>
+        - generátor èárovıch relaxaèních obrazcù.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a
+        href="img/mandelbrot.jpg"><font face="Arial"><img
+        src="img/mandelbrot_m.jpg" border="0" width="250"
+        height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Mandelbrot</strong>
+        - generátor fraktálovıch obrazcù Mandelbrotovy
+        mnoiny. Ke generování je pouita integer matematika
+        a díky tomu je pøekreslení obrazce rychlé. Je však
+        nutno poèítat s tím, e pøi zvìtšování
+        mìøítka zobrazení je potøebná rostoucí pøesnost
+        poètu èíslic. Pouitá integer a float matematika
+        vystaèí do mìøítka zvìtšení 10^5, double
+        matematika do mìøítka 10^10. Pøi dalším
+        zvìtšování se namísto obrazce zobrazí u jen
+        barevné èáry. Ovládání: E nahoru, S vlevo, D
+        vpravo, X dolù, Q zvìtšení mìøítka, A zmenšení
+        mìøítka, I pøepnutí na celoèíselnou matematiku
+        (nejrychlejší, dosah do 10^-5), F pøepnutí na float
+        matematiku (pomalejší, dosah do 10^-5), B pøepnutí na
+        double matematiku (pomalá, dosah do 10^-10), O
+        sníení poètu krokù iterací, P zvıšení poètu
+        krokù iterací, mezera pøekreslení obrazovky.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a
+        href="img/matrixrain.jpg"><font face="Arial"><img
+        src="img/matrixrain_m.jpg" border="0" width="250"
+        height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Matrix Rain</strong>
+        - simulace &quot;matrixového kódového deštì&quot;.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/maze.jpg"><font
+        face="Arial"><img src="img/maze_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Maze</strong>
+        - cílem je najít cestu z bludištì. Bludištì jsou
+        generována náhodnì programovì. Ovládání: J vlevo,
+        I nahoru, L vpravo, K dolù, H pomoc (ukázání
+        dveøí).</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/monoscope.jpg"><font
+        face="Arial"><img src="img/monoscope_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Monoscope</strong>
+        - test displeje, zobrazí monoskop.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/pi.jpg"><font
+        face="Arial"><img src="img/pi_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Pi</strong> -
+        vıpoèet èísla Pi na 1180 èíslic. Po vıpoètu je
+        vısledek zkontrolován s oèekávanım vzorkem.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/pixels.jpg"><font
+        face="Arial"><img src="img/pixels_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Pixels</strong>
+        - náhodné generování barevnıch pixelù.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/raytrace.jpg"><font
+        face="Arial"><img src="img/raytrace_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Raytrace</strong>
+        - generování 3D obrazce metodou ray tracing. Vzhledem k
+        omezené barevné hloubce PicoQVGA je pøi zobrazení
+        pouit rastrovı dithering (&quot;zrnitost&quot;
+        obrázku).</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/rgbtest.jpg"><font
+        face="Arial"><img src="img/rgbtest_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>RGBtest</strong>
+        - test barev</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/spheres.jpg"><font
+        face="Arial"><img src="img/spheres_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Spheres</strong>
+        - náhodné generování koulí.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/spots.jpg"><font
+        face="Arial"><img src="img/spots_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Spots</strong>
+        - náhodné generování skvrn.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a href="img/twister.jpg"><font
+        face="Arial"><img src="img/twister_m.jpg" border="0"
+        width="250" height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Twister</strong>
+        - zkroucení texturovaného kvádru. Slouí jako
+        ukázka programové deformace obrázku.</font></td>
+    </tr>
+    <tr>
+        <td align="right" width="260"><a
+        href="img/watersurface.jpg"><font face="Arial"><img
+        src="img/watersurface_m.jpg" border="0" width="250"
+        height="200"></font></a></td>
+        <td valign="top"><font face="Arial"><strong>Water Surface</strong>
+        - simulace vlnící se vodní hladiny (zvuk).</font></td>
+    </tr>
+</table>
+</div>
+
+<p align="center"><a href="dwn/PicoQVga.zip"><font face="Arial">Download
+knihovny PicoQVGA</font></a></p>
+
+<p align="right"><font face="Arial">Autor: Miroslav Nìmeèek, </font><a
+href="http://panda38.sweb.cz"><font face="Arial">http://panda38.sweb.cz</font></a></p>
+</body>
+</html>

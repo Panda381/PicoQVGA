@@ -1,0 +1,19 @@
+Program control:
+
+J ....... left
+L ....... right
+I ....... up
+K ....... down
+space ... flip state
+Enter ... run life
+0..9 .... select slot
+C ....... copy to clipboard
+V ....... paste from clipboard
+D ....... clear board
+
+
+Cell rules:
+
+3 cells ... born new cell
+2 cells ... stable state
+other ..... dead 

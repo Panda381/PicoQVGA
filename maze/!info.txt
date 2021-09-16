@@ -1,0 +1,7 @@
+Program control:
+
+J ... left
+L ... right
+I ... up
+K ... down
+H ... help, show door
