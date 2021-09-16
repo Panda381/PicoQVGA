@@ -1,7 +1,12 @@
 
-PicoQVGA - QVGA display on Raspberry Pico
------------------------------------------
+PicoQVGA - Minimalistic QVGA Display on Raspberry Pico
+------------------------------------------------------
 Miroslav Nemecek, panda38.sweb.cz, Panda38@seznam.cz
+
+Resolution: 320x240 pixels, 8 bits
+
+Description and tutorial to PIO and DMA: view "_www" subdirectory
+or http://www.breatharian.eu/hw/picoqvga/index_en.html
 
 How to install:
 - Install compiler gcc-arm-none-eabi-10-2020 into folder C:\ARM10
@@ -80,10 +85,7 @@ to USB port. Good choise is USB-serial adaptor PL2303TA.
 
 PicoQVGA examples
 ----------------
-Ants - card game
-	keyboard control: 'J' left, 'L' right, space select, 'D' discard, 'H' help, 'Q' quit
-
-Balloons - sprite demo, floating balloons
+Balloons - back buffer demo, floating balloons
 
 Draw - draw graphics demo
 
@@ -97,17 +99,9 @@ Fifteen - game
 
 Flag - animation of flag fluttering in the wind
 
-Ghost Racing - car racing game, racing with player's ghost copy, demonstration of 3D perspective projection
-	keyboard control: 'I' gear up, 'K' gear down, 'J' turn left, 'L' turn right
-
-Ginger House - picture fairy tale book
-	keyboard control: 'J' previous page, 'L' next page
-
 Hello - simple demonstration, print text "Hello world!" on the screen
 
 Hypno - hypnotizing rotating pattern
-
-Level Meter - demo of music volume level indication
 
 Life - game, reproducing cells
 	keyboard control: 'L' right, 'I' up, 'J' left, 'K' down, 'C' copy, 'V' paste, 'D' clear,
@@ -117,23 +111,15 @@ Lines - moving line patterns
 
 Mandelbrot - fractal pattern generator
 	keyboard control: 'E' up, 'S' left, 'D' right, 'X' down, 'Q' zoom in, 'A' zoom out,
-	'L' low resolution 132x100, 'M' medium resolution 264x200, 'H' high resolution 528x400,
 	'I' integer arithmetics, 'F' float arithmetics, 'B' double arithmetics,
-	'O' decrease number of steps, 'P' increase number of steps, 'U' increase system clock,
-	'T' decrease system clock, space redraw
+	'O' decrease number of steps, 'P' increase number of steps, space redraw
 
 Matrix Rain - simulation of Matrix code rain
 
 Maze - game, simple maze with maze generator
 	keyboard control: 'J' left, 'I' up, 'L' right, 'K' down, 'H' help (show door)
 
-Monoscope - test of various graphic modes
-	keyboard control: '0'..'9', 'A'..'U' select videomode
-
-Oscilloscope - demo oscilloscope simulator
-
-Pacman - game of popular Pac-man
-	keyboard control: 'J' left, 'I' up, 'L' right, 'K' down, 'A' pause
+Monoscope - test of graphic mode
 
 Pi - calculate Pi at 4800 digits
 
@@ -141,19 +127,9 @@ Pixels - random pixels
 
 Raytrace - ray tracing 3D demonstration of mirror spheres
 
-Sokoban - game with 3000 puzzles and with their solutions
-	keyboard control: 'L' right, 'I' up, 'J' left, 'K' down, 'H' help (solution),
-	'R' restart scene, 'Q' previous level, 'W' next level, 'P' info
-
 Spheres - draw random spheres
 
 Spots - draw random dot spots
-
-Tetris - game
-	keyboard control: 'L' right, 'I' turn, 'J' left, 'K' drop, 'A' pause
-
-Train - puzzle game with 50 levels and with their solutions
-	keyboard control: 'L' right, 'I' up, 'J' left, 'K' down, 'H' help (solution), Enter OK, Esc escape, BS backspace
 
 Twister - deformable block covered with 4 textures
 
