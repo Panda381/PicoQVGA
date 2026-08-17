@@ -8,6 +8,21 @@ Resolution: 320x240 pixels, 8 bits
 Description and tutorial to PIO and DMA: view "_www" subdirectory
 or http://www.breatharian.eu/hw/picoqvga/index_en.html
 
+
+License
+-------
+All of my software creations are distributed under the Unlicense
+https://spdx.org/licenses/Unlicense.html,
+and my hardware creations under the CC0 license
+https://creativecommons.org/publicdomain/zero/1.0/legalcode.en.
+You are free to use, modify, and distribute them for any purpose without having
+to credit me as the author. The exception is content derived from third-party
+sources. These third-party components are not covered by my Unlicense or CC0
+licenses, but rather by the original license terms of their authors. These
+components are marked in the code, and when using them, you must comply with
+the terms of the original licenses.
+
+
 How to install:
 - Install compiler gcc-arm-none-eabi-10-2020 into folder C:\ARM10
 - Unpack this package into some folder
